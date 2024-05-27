@@ -1,15 +1,21 @@
-import { Types } from "mongoose";
+import { Document, Types } from "mongoose";
 import { User } from "../models/user.model";
 import { ApiError } from "../utils/ApiError";
 import { ApiResponse } from "../utils/ApiResponse";
 import { asyncHandler } from "../utils/asyncHandler";
 import { Request, Response } from "express";
 
+interface IUser extends Document {
+  isPasswordCorrect(password: string): Promise<boolean>;
+  generateAccessToken(): string;
+  generateRefreshToken(): string;
+}
+
 const generateAccessAndRefreshToken = async (userId: Types.ObjectId) => {
   try {
     const user = await User.findById(userId);
-    const accessToken = user?.generateAccessToken();
-    const refreshToken = user?.generateRefreshToken();
+    const accessToken = (user as unknown as IUser).generateAccessToken();
+    const refreshToken = (user as unknown as IUser).generateRefreshToken();
     if (user) {
       user.refreshToken = refreshToken;
     }
@@ -66,9 +72,9 @@ const loginUser = asyncHandler(async (req: Request, res: Response) => {
     throw new ApiError(400, "Credentials are required");
   }
 
-  const user = await User.findOne({
+  const user = (await User.findOne({
     $or: [{ email }, { contactNo }],
-  });
+  })) as IUser;
 
   if (!user) {
     throw new ApiError(400, "Credentials are required");
@@ -107,7 +113,7 @@ const loginUser = asyncHandler(async (req: Request, res: Response) => {
 
 const logoutUser = asyncHandler(async (req: Request, res: Response) => {
   await User.findByIdAndUpdate(
-    req.user._id,
+    req.(user)._id,
     { $unset: { refreshToken: 1 } },
     { new: true }
   );
@@ -120,5 +126,9 @@ const logoutUser = asyncHandler(async (req: Request, res: Response) => {
     .clearCookie("refreshToken", options)
     .json(new ApiResponse(200, {}, "User logged out"));
 });
+
+const getCurrentUser = asyncHandler(async(req: Request, res: Response)=>{
+  return res.status(200).json(new ApiResponse(200, req.user, "User fetched successfully"))
+})
 
 export { registerUser, loginUser, logoutUser };
